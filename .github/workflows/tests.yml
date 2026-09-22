@@ -1,0 +1,50 @@
+name: tests
+
+# Windows-only by design: drives WinForms and relies on Windows PowerShell 5.1
+# semantics. Steps pin `shell: powershell` (5.1) rather than `pwsh` (7.x) on
+# purpose -- 5.1 is the runtime the tool ships against and what the suites verify.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fails loudly if the BOM was stripped from the .ps1 files or the CRLF from
+      # the .bat files -- both are load-bearing (see README).
+      - name: Check encodings survived checkout
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in 'DocxMeta.ps1','DocxMetaGui.ps1','Make-TestDocx.ps1','_test-core.ps1','_test-gui.ps1') {
+            $b = [System.IO.File]::ReadAllBytes((Join-Path $PWD $f))
+            $hasBom = $b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF
+            Write-Host ("{0,-22} BOM={1}" -f $f, $hasBom)
+            if (-not $hasBom) { $bad++ }
+          }
+          foreach ($f in 'run.bat','_test-all.bat') {
+            $t = [System.IO.File]::ReadAllText((Join-Path $PWD $f))
+            $bareLf = ([regex]::Matches($t, "(?<!`r)`n")).Count
+            Write-Host ("{0,-22} bare-LF={1}" -f $f, $bareLf)
+            if ($bareLf -gt 0) { $bad++ }
+          }
+          if ($bad -gt 0) { throw "$bad file(s) lost their required encoding/line endings" }
+
+      # -STA mirrors how run.bat launches the GUI; the GUI suite needs it.
+      - name: Core logic tests
+        shell: powershell
+        run: |
+          & .\_test-core.ps1 -STA
+          if ($LASTEXITCODE -ne 0) { throw "core suite failed (exit $LASTEXITCODE)" }
+
+      - name: GUI tests
+        shell: powershell
+        run: |
+          & .\_test-gui.ps1 -STA
+          if ($LASTEXITCODE -ne 0) { throw "gui suite failed (exit $LASTEXITCODE)" }

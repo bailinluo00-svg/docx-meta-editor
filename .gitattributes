@@ -1,0 +1,23 @@
+# Line endings and encoding are load-bearing in this project -- see the README
+# section "仓库里的 .gitattributes 为什么写得那么怪". Do not "simplify" these
+# rules, and do not let a tool strip them.
+
+# Default for everything not matched below: normalise to LF in the repository
+# and in the working tree, so no per-machine core.autocrlf setting can change
+# what a contributor ends up with.
+* text=auto eol=lf
+
+# Windows batch files MUST keep CRLF or cmd.exe mis-parses them. The .bat files
+# here are deliberately ASCII-only, so a text rule is safe for them.
+*.bat text eol=crlf
+
+# The .ps1 files are deliberately BOM-prefixed UTF-8: Windows PowerShell 5.1
+# reads a BOM-less .ps1 as GBK, which mangles the Chinese UI strings and can even
+# cause parse errors. `binary` makes git store and check out the exact bytes --
+# no BOM stripping, no newline conversion, no autocrlf/AutoCrlf surprises.
+*.ps1 binary
+
+# Binary artefacts
+*.docx binary
+*.zip  binary
+*.png  binary

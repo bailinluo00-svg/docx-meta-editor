@@ -141,3 +141,26 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# ---------------------------------------------------------------------------
+# Added by docx-meta-editor (see README)
+# ---------------------------------------------------------------------------
+# Test scratch -- the suites create and wipe these on every run
+_tmp/
+_gui-test/
+_fixtures/
+_diag/
+_verify/
+_verify2/
+
+# Screenshots produced by _gui-smoke.ps1
+_gui.png
+
+# Packaging leftovers
+_pkg/
+_pkg2/
+DocxMetaEditor.zip
+
+# User files that must never be committed: the tool edits real .docx documents
+*.backup.docx
+*_modified.docx
