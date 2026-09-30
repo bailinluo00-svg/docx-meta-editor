@@ -75,7 +75,7 @@ function Show-UiConfirm {
 # ---------------------------------------------------------------- form
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Word 文档信息修改器  v1.0'
-$form.ClientSize = New-Object System.Drawing.Size(716, 636)
+$form.ClientSize = New-Object System.Drawing.Size(716, 764)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
@@ -221,10 +221,46 @@ $btnDonor.Size = New-Object System.Drawing.Size(182, 28)
 
 $grpAuthor.Controls.AddRange(@($chkAuthor, $lblAuthorCap, $txtAuthor, $chkModBy, $lblDonor, $txtDonor, $btnDonor))
 
-# ============================ 4. 保存方式 ============================
+# ============================ 4. 创建时间 ============================
+# Note: the filesystem timestamp and the docx metadata are two different things.
+# Explorer's "Date created" column comes from the filesystem; the docx
+# dcterms:created value shows up as "Content created". Both are offered here.
+$grpCreated = New-Object System.Windows.Forms.GroupBox
+$grpCreated.Text = '4. 创建时间（不勾选则保持原值不变）'
+$grpCreated.Location = New-Object System.Drawing.Point(12, 402)
+$grpCreated.Size = New-Object System.Drawing.Size(692, 100)
+
+$chkCreated = New-Object System.Windows.Forms.CheckBox
+$chkCreated.Text = '创建时间：'
+$chkCreated.Location = New-Object System.Drawing.Point(14, 24)
+$chkCreated.Size = New-Object System.Drawing.Size(80, 24)
+
+$dtpCreated = New-Object System.Windows.Forms.DateTimePicker
+$dtpCreated.Format = 'Custom'
+$dtpCreated.CustomFormat = 'yyyy-MM-dd  HH:mm:ss'
+$dtpCreated.ShowUpDown = $false
+$dtpCreated.Location = New-Object System.Drawing.Point(96, 23)
+$dtpCreated.Size = New-Object System.Drawing.Size(190, 25)
+$dtpCreated.Value = (Get-Date)
+
+$chkCreatedMeta = New-Object System.Windows.Forms.CheckBox
+$chkCreatedMeta.Text = '一并修改文档内部的「内容创建时间」'
+$chkCreatedMeta.Location = New-Object System.Drawing.Point(300, 24)
+$chkCreatedMeta.Size = New-Object System.Drawing.Size(260, 24)
+
+$lblCreatedHint = New-Object System.Windows.Forms.Label
+$lblCreatedHint.Text = '（勾选即修改文件系统时间戳，也就是资源管理器属性里显示的「创建时间」；' +
+    '同时勾右边那项会连带改文档元数据 dcterms:created。时间按本机时区处理，内部按 UTC 存储。）'
+$lblCreatedHint.Location = New-Object System.Drawing.Point(16, 54)
+$lblCreatedHint.Size = New-Object System.Drawing.Size(660, 38)
+$lblCreatedHint.ForeColor = [System.Drawing.Color]::DimGray
+
+$grpCreated.Controls.AddRange(@($chkCreated, $dtpCreated, $chkCreatedMeta, $lblCreatedHint))
+
+# ============================ 5. 保存方式 ============================
 $grpSave = New-Object System.Windows.Forms.GroupBox
-$grpSave.Text = '4. 保存方式'
-$grpSave.Location = New-Object System.Drawing.Point(12, 398)
+$grpSave.Text = '5. 保存方式'
+$grpSave.Location = New-Object System.Drawing.Point(12, 510)
 $grpSave.Size = New-Object System.Drawing.Size(692, 76)
 
 $rbInPlace = New-Object System.Windows.Forms.RadioButton
@@ -251,20 +287,20 @@ $txtSaveAs.Enabled = $false
 
 $grpSave.Controls.AddRange(@($rbInPlace, $rbSaveAs, $lblSaveAs, $txtSaveAs))
 
-# ============================ 5. 执行 ============================
+# ============================ 6. 执行 ============================
 $btnRun = New-Object System.Windows.Forms.Button
 $btnRun.Text = '开始修改'
-$btnRun.Location = New-Object System.Drawing.Point(12, 482)
+$btnRun.Location = New-Object System.Drawing.Point(12, 594)
 $btnRun.Size = New-Object System.Drawing.Size(692, 38)
 $btnRun.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 11, [System.Drawing.FontStyle]::Bold)
 
 $lblStatus = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(14, 526)
+$lblStatus.Location = New-Object System.Drawing.Point(14, 638)
 $lblStatus.Size = New-Object System.Drawing.Size(690, 22)
 $lblStatus.Text = '就绪。'
 
 $txtLog = New-Object System.Windows.Forms.TextBox
-$txtLog.Location = New-Object System.Drawing.Point(14, 552)
+$txtLog.Location = New-Object System.Drawing.Point(14, 664)
 $txtLog.Size = New-Object System.Drawing.Size(690, 76)
 $txtLog.Multiline = $true
 $txtLog.ReadOnly = $true
@@ -272,7 +308,7 @@ $txtLog.ScrollBars = 'Vertical'
 $txtLog.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 250)
 $txtLog.Font = New-Object System.Drawing.Font('Consolas', 9)
 
-$form.Controls.AddRange(@($grpFile, $grpTime, $grpAuthor, $grpSave, $btnRun, $lblStatus, $txtLog))
+$form.Controls.AddRange(@($grpFile, $grpTime, $grpAuthor, $grpCreated, $grpSave, $btnRun, $lblStatus, $txtLog))
 
 function Write-Log {
     param([string] $Message)
@@ -314,6 +350,8 @@ function Reset-ForNewFile {
     $txtAuthor.Text = ''
     $chkAuthor.Checked = $false
     $chkTime.Checked = $false
+    $chkCreated.Checked = $false
+    $chkCreatedMeta.Checked = $false
     $txtLog.Clear()
     $lblStatus.Text = '就绪。'
     $lblStatus.ForeColor = [System.Drawing.Color]::Black
@@ -337,8 +375,18 @@ $btnPick.Add_Click({
         $timeTxt = if ($m.HasTotalTime) { ConvertFrom-Minutes -Minutes $m.TotalMinutes } else { '无' }
         Write-Log -Message ("  原作者 = '{0}'，上次保存者 = '{1}'，编辑总时间 = {2}" -f $m.Author, $m.LastModifiedBy, $timeTxt)
 
+        # Two different "created" times, worth showing side by side so the user can
+        # tell which one Explorer's Details tab is actually displaying.
+        $fsCreated = (Get-Item -LiteralPath $picked -Force).CreationTime
+        $metaCreated = if ($m.Created) { $m.Created.ToString('yyyy-MM-dd HH:mm:ss') } else { '(无)' }
+        Write-Log -Message ("  文件系统创建时间 = {0}（资源管理器显示的就是这个）" -f $fsCreated.ToString('yyyy-MM-dd HH:mm:ss'))
+        Write-Log -Message ("  文档内容创建时间 = {0}（dcterms:created）" -f $metaCreated)
+
         # prefill the controls with the current values for convenience
         if (-not [string]::IsNullOrEmpty($m.Author)) { $txtAuthor.Text = $m.Author }
+        # default the picker to the file's current creation time, so nudging it a
+        # little (or re-setting it) is easy
+        try { $dtpCreated.Value = $fsCreated } catch { }
         if ($m.HasTotalTime) {
             $numHours.Value = [math]::Min([int]$numHours.Maximum, [int][math]::Floor($m.TotalMinutes / 60))
             $numMins.Value = [int]($m.TotalMinutes % 60)
@@ -390,11 +438,13 @@ $btnRun.Add_Click({
         return
     }
 
-    $doTime   = $chkTime.Checked
-    $doAuthor = $chkAuthor.Checked
+    $doTime    = $chkTime.Checked
+    $doAuthor  = $chkAuthor.Checked
+    $doCreated = $chkCreated.Checked
+    $createdValue = $dtpCreated.Value
 
-    if (-not ($doTime -or $doAuthor)) {
-        Show-UiMessage '请至少勾选一项要修改的内容（编辑总时间 / 作者名称）。' '提示'
+    if (-not ($doTime -or $doAuthor -or $doCreated)) {
+        Show-UiMessage '请至少勾选一项要修改的内容（编辑总时间 / 作者名称 / 创建时间）。' '提示'
         return
     }
 
@@ -406,11 +456,20 @@ $btnRun.Add_Click({
 
     $minutes = ([int]$numHours.Value * 60) + [int]$numMins.Value
 
+    # The XML-metadata part of the change (this is what Set-DocxMeta handles).
+    # The filesystem timestamp is applied separately, AFTER the file has been
+    # written, because writing the file resets its timestamps.
     $params = @{ Path = $script:currentFile }
-    if ($doTime)   { $params['TotalMinutes'] = $minutes }
+    $xmlChanges = $false
+    if ($doTime)   { $params['TotalMinutes'] = $minutes; $xmlChanges = $true }
     if ($doAuthor) {
         $params['Author'] = $author
         if ($chkModBy.Checked) { $params['ModifiedBy'] = $author }
+        $xmlChanges = $true
+    }
+    if ($doCreated -and $chkCreatedMeta.Checked) {
+        $params['Created'] = $createdValue
+        $xmlChanges = $true
     }
 
     if ($rbInPlace.Checked) {
@@ -428,6 +487,14 @@ $btnRun.Add_Click({
     $summary = @()
     if ($doTime)   { $summary += ("编辑总时间 -> {0}（{1} 分钟）" -f (ConvertFrom-Minutes -Minutes $minutes), $minutes) }
     if ($doAuthor) { $summary += ("作者名称 -> {0}" -f $author) }
+    if ($doCreated) {
+        $stamp = $createdValue.ToString('yyyy-MM-dd HH:mm:ss')
+        if ($chkCreatedMeta.Checked) {
+            $summary += ("创建时间 -> {0}（文件系统时间戳 + 文档内容创建时间）" -f $stamp)
+        } else {
+            $summary += ("创建时间 -> {0}（仅文件系统时间戳）" -f $stamp)
+        }
+    }
     $where = if ($rbInPlace.Checked) { '直接修改原文件（自动备份）' } else { "另存为：$($params['OutputPath'])" }
     $msg = "文档：$($script:currentFile)`n`n" + ($summary -join "`n") + "`n`n保存方式：$where`n`n确认执行吗？"
     if ((Show-UiConfirm -MessageText $msg) -ne [System.Windows.Forms.DialogResult]::Yes) { return }
@@ -438,12 +505,24 @@ $btnRun.Add_Click({
     [System.Windows.Forms.Application]::DoEvents()
 
     try {
-        $result = Set-DocxMeta @params
-        Write-Log -Message "修改成功：$($result.Changed)"
-        Write-Log -Message "输出文件：$($result.Path)"
-        if ($result.InPlace) { Write-Log -Message '备份文件：同目录下 <文件名>.backup.docx' }
+        $result = $null
+        if ($xmlChanges) {
+            $result = Set-DocxMeta @params
+            Write-Log -Message "修改成功：$($result.Changed)"
+            Write-Log -Message "输出文件：$($result.Path)"
+            if ($result.InPlace) { Write-Log -Message '备份文件：同目录下 <文件名>.backup.docx' }
+            $targetPath = $result.Path
+        } else {
+            $targetPath = $script:currentFile
+        }
 
-        $verify = Get-DocxMeta -Path $result.Path
+        # Filesystem timestamps go last: writing the docx above has just reset them.
+        if ($doCreated) {
+            $ts = Set-FileTimestamps -Path $targetPath -CreationTime $createdValue
+            Write-Log -Message ("已设置文件系统创建时间 -> {0}" -f $ts.CreationTime.ToString('yyyy-MM-dd HH:mm:ss'))
+        }
+
+        $verify = Get-DocxMeta -Path $targetPath
         $vTime = if ($verify.HasTotalTime) { ConvertFrom-Minutes -Minutes $verify.TotalMinutes } else { '无' }
         Write-Log -Message ("回读验证 -> 作者 = '{0}'，上次保存者 = '{1}'，编辑总时间 = {2}" -f $verify.Author, $verify.LastModifiedBy, $vTime)
 
@@ -451,17 +530,42 @@ $btnRun.Add_Click({
         if ($doTime -and $verify.TotalMinutes -ne $minutes) { $ok = $false }
         if ($doAuthor -and $verify.Author -ne $author) { $ok = $false }
 
+        # the created time was written to the filesystem, so verify it there
+        if ($doCreated) {
+            $fsNow = (Get-Item -LiteralPath $targetPath -Force).CreationTime
+            Write-Log -Message ("回读验证 -> 文件系统创建时间 = {0}" -f $fsNow.ToString('yyyy-MM-dd HH:mm:ss'))
+            if ($fsNow.ToString('yyyy-MM-dd HH:mm:ss') -ne $createdValue.ToString('yyyy-MM-dd HH:mm:ss')) { $ok = $false }
+            if ($chkCreatedMeta.Checked) {
+                $mc = if ($verify.Created) { $verify.Created.ToString('yyyy-MM-dd HH:mm:ss') } else { '(无)' }
+                Write-Log -Message ("回读验证 -> 文档内容创建时间 = {0}" -f $mc)
+                if ($mc -ne $createdValue.ToString('yyyy-MM-dd HH:mm:ss')) { $ok = $false }
+            }
+        }
+
         if ($ok) {
             Set-Status -Message '修改成功，并已回读验证通过。' -Color 'DarkGreen'
             Write-Log -Message '验证通过。'
             # Measured behaviour (Word 16.0, Microsoft 365): TotalTime ACCUMULATES.
             # Word keeps the stored value as a baseline and adds each new session
             # onto it, so this write is a baseline, not a final value.
-            $advice = '编辑总时间已设定。' + "`n`n" +
-                'Word 的编辑总时间是【累计】的：它会以这个值为基线，以后每次编辑并保存都会在这个基础上继续往上加，不会把它抹掉重算。' + "`n`n" +
-                '所以：如果你需要一个精确的最终数字，请在改完全部内容后最后再设一次，之后别再让 Word 保存；如果不需要精确值，正常编辑即可。'
+            $advice = ''
+            if ($doTime) {
+                $advice += '编辑总时间已设定：Word 的编辑总时间是【累计】的，它会以这个值为基线，' +
+                    '以后每次编辑并保存都会继续往上加，不会把它抹掉重算。需要精确的最终数字，' +
+                    '请在改完全部内容后最后再设一次。'
+            }
+            if ($doCreated) {
+                if ($advice) { $advice += "`n`n" }
+                if ($chkCreatedMeta.Checked) {
+                    $advice += '创建时间已设定：文件系统时间戳与文档内容创建时间都改了。'
+                } else {
+                    $advice += '创建时间已设定（仅文件系统时间戳）。文档内部的「内容创建时间」没动 —— ' +
+                        '如果资源管理器属性页里还有一项没跟着变，就是它。'
+                }
+            }
             if ($doAuthor) {
-                $advice += "`n`n" + '注意：「作者 / 上次保存者」不一样 —— Word 保存时一般会用当前 Word 用户名把作者冲掉（这一条我没实测，是推断）。要保留作者，也请放在最后一步改。'
+                if ($advice) { $advice += "`n`n" }
+                $advice += '注意：「作者 / 上次保存者」与上面不同 —— Word 保存时一般会用当前 Word 用户名把作者冲掉（这一条我没实测，是推断）。要保留作者，请放在最后一步改。'
             }
             Show-UiMessage ("处理完成，已验证。" + "`n`n" + $advice) '完成'
         } else {
@@ -499,6 +603,9 @@ if ($Probe) {
         ChkTime    = $chkTime
         ChkAuthor  = $chkAuthor
         ChkModBy   = $chkModBy
+        ChkCreated     = $chkCreated
+        ChkCreatedMeta = $chkCreatedMeta
+        DtpCreated     = $dtpCreated
         NumHours   = $numHours
         NumMins    = $numMins
         RbInPlace  = $rbInPlace

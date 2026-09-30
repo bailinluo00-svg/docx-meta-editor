@@ -148,6 +148,65 @@ $lock.Close()
 Assert $threw "locked file reported, not silently ignored"
 
 Write-Output ''
+Write-Output '--- 9) created / content-modified dates ---'
+# A local time must be stored as its UTC equivalent and read back as the same local time.
+$wantC  = Get-Date '2015-06-07 08:09:00'
+$wantCM = Get-Date '2016-07-08 09:10:11'
+Set-DocxMeta -Path $f1 -InPlace -NoBackup -Created $wantC -ContentModified $wantCM | Out-Null
+$dc = Get-DocxMeta $f1
+Assert ($dc.Created.ToString('yyyy-MM-dd HH:mm:ss') -eq $wantC.ToString('yyyy-MM-dd HH:mm:ss')) "Created round-trips as local time (got $($dc.Created))"
+Assert ($dc.ContentModified.ToString('yyyy-MM-dd HH:mm:ss') -eq $wantCM.ToString('yyyy-MM-dd HH:mm:ss')) "ContentModified round-trips as local time"
+
+# stored value must be UTC, with the xsi:type attribute Word expects
+$zipC = [System.IO.Compression.ZipFile]::OpenRead($f1)
+$ec = $zipC.GetEntry('docProps/core.xml'); $sc = $ec.Open(); $mc = New-Object System.IO.MemoryStream; $sc.CopyTo($mc); $sc.Close(); $zipC.Dispose()
+$xmlC = [System.Text.Encoding]::UTF8.GetString($mc.ToArray())
+$stamp = [regex]::Match($xmlC, '<dcterms:created[^>]*>([^<]*)</dcterms:created>').Groups[1].Value
+Assert ($stamp -eq $wantC.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) "created stored as UTC (got $stamp)"
+Assert ($xmlC -match '<dcterms:created[^>]*xsi:type="dcterms:W3CDTF"' ) "created carries xsi:type"
+Assert ($xmlC -match 'xmlns:xsi=') "xmlns:xsi still declared"
+Assert ([regex]::Matches($xmlC, '<dcterms:created').Count -eq 1) "exactly one dcterms:created (no duplicate)"
+
+# a part that lacks the element must get it created in the RIGHT namespace
+$f6 = Join-Path $tmp 'f.docx'
+$null = New-TestDocx -Path $f6 -Text 'no dates'
+$zipD = [System.IO.Compression.ZipFile]::Open($f6, 'Update')
+$ed = $zipD.GetEntry('docProps/core.xml'); $sd = $ed.Open(); $md = New-Object System.IO.MemoryStream; $sd.CopyTo($md); $sd.Close()
+$td = [System.Text.Encoding]::UTF8.GetString($md.ToArray()) -replace '<dcterms:created[^>]*>[^<]*</dcterms:created>', ''
+$ed.Delete()
+$nd = $zipD.CreateEntry('docProps/core.xml'); $od = $nd.Open(); $bd = (New-Object System.Text.UTF8Encoding($false)).GetBytes($td); $od.Write($bd,0,$bd.Length); $od.Close()
+$zipD.Dispose()
+Assert ($null -eq (Get-DocxMeta $f6).Created) "fixture without the element reads back as none"
+Set-DocxMeta -Path $f6 -InPlace -NoBackup -Created (Get-Date '2019-09-09 09:09:09') | Out-Null
+$zipE = [System.IO.Compression.ZipFile]::OpenRead($f6)
+$ee = $zipE.GetEntry('docProps/core.xml'); $se = $ee.Open(); $me = New-Object System.IO.MemoryStream; $se.CopyTo($me); $se.Close(); $zipE.Dispose()
+$xmlE = [System.Text.Encoding]::UTF8.GetString($me.ToArray())
+Assert ($xmlE -match '<dcterms:created[^>]*xsi:type="dcterms:W3CDTF"' ) "missing element created with the right namespace and attribute"
+Assert (-not ($xmlE -match '<cp:created')) "no stray cp:created element"
+Assert ((Get-DocxMeta $f6).Created.ToString('yyyy-MM-dd HH:mm:ss') -eq '2019-09-09 09:09:09') "newly created element round-trips"
+
+# app.xml must keep working (its vocabulary is in a different namespace)
+Set-DocxMeta -Path $f6 -InPlace -NoBackup -TotalMinutes 42 | Out-Null
+Assert ((Get-DocxMeta $f6).TotalMinutes -eq 42) "TotalTime still writes and reads (app.xml namespace)"
+
+Write-Output ''
+Write-Output '--- 10) filesystem timestamps ---'
+$created = Get-Date '2001-01-01 01:01:01'
+$written = Get-Date '2002-02-02 02:02:02'
+$tsr = Set-FileTimestamps -Path $f6 -CreationTime $created -LastWriteTime $written
+Assert ($tsr.CreationTime.ToString('yyyy-MM-dd HH:mm:ss') -eq '2001-01-01 01:01:01') "filesystem CreationTime set"
+Assert ($tsr.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss') -eq '2002-02-02 02:02:02') "filesystem LastWriteTime set"
+$threw = $false; try { Set-FileTimestamps -Path $f6 | Out-Null } catch { $threw = $true }
+Assert $threw "Set-FileTimestamps rejects an empty request"
+
+Write-Output ''
+Write-Output '--- 11) parts stay well-formed after the date edits ---'
+foreach ($f in @($f6)) {
+    $r6 = Test-PartsStrict $f
+    Assert ($r6.Bad.Count -eq 0) "all $($r6.Entries) parts parse: $(Split-Path $f -Leaf)"
+    foreach ($b in $r6.Bad) { Write-Output "      bad -> $b" }
+}
+Write-Output ''
 Write-Output "=== FAILURES: $script:failed ==="
 
 # non-zero exit code so _test-all.bat and CI can actually detect failures

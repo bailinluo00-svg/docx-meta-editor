@@ -208,14 +208,69 @@ Assert ($script:gui.LblStatus.Text -match '失败') "status line reports the fai
 Assert ($script:gui.BtnRun.Enabled -eq $true) 'run button re-enabled after a failure'
 
 Write-Output ''
-Write-Output '--- 7) the scratch folder must be the only place touched ---'
+Write-Output '--- 7) created time through the GUI ---'
+$target3 = Join-Path $tmp 'target3.docx'
+Copy-Item -LiteralPath $sample -Destination $target3
+$global:DocxMetaPickFile = $target3
+Invoke-Click -Control $script:gui.BtnPick
+Assert ($script:gui.TxtFile.Text -eq $target3) 'picked the created-time target'
+# the picker must prefill from the file's CURRENT filesystem creation time
+$fsAtPick = (Get-Item -LiteralPath $target3 -Force).CreationTime
+Assert ($script:gui.DtpCreated.Value.ToString('yyyy-MM-dd HH:mm') -eq $fsAtPick.ToString('yyyy-MM-dd HH:mm')) "date picker prefilled (got $($script:gui.DtpCreated.Value))"
+Assert ($script:gui.ChkCreated.Checked -eq $false) 'created checkbox starts unchecked'
+Assert ($script:gui.ChkCreatedMeta.Checked -eq $false) 'doc-internal checkbox starts unchecked (default is filesystem only)'
+
+Write-Output ''
+Write-Output '--- 8) set the created time, filesystem only ---'
+$wantCreated = Get-Date '2013-04-05 06:07:08'
+$script:gui.ChkTime.Checked = $false
+$script:gui.ChkAuthor.Checked = $false
+$script:gui.ChkCreated.Checked = $true
+$script:gui.ChkCreatedMeta.Checked = $false
+$script:gui.DtpCreated.Value = $wantCreated
+$script:gui.RbInPlace.Checked = $true
+$metaCreatedBefore = (Get-DocxMeta -Path $target3).Created
+$script:msgLog.Clear()
+Set-MsgAnswer ([System.Windows.Forms.DialogResult]::Yes)
+Invoke-Click -Control $script:gui.BtnRun
+$fsAfter = (Get-Item -LiteralPath $target3 -Force).CreationTime
+Assert ($fsAfter.ToString('yyyy-MM-dd HH:mm:ss') -eq $wantCreated.ToString('yyyy-MM-dd HH:mm:ss')) "filesystem creation time applied (got $fsAfter)"
+$metaCreatedAfter = (Get-DocxMeta -Path $target3).Created
+Assert ($metaCreatedAfter.ToString('yyyy-MM-dd HH:mm:ss') -eq $metaCreatedBefore.ToString('yyyy-MM-dd HH:mm:ss')) 'doc-internal date left alone when its checkbox is off'
+Assert (Msg-Text -match '文件系统时间戳') "dialog says only the filesystem stamp changed (got: $(Msg-Text))"
+Assert ($script:gui.LblStatus.Text -match '成功') "filesystem-only run reported success (got '$($script:gui.LblStatus.Text)')"
+
+Write-Output ''
+Write-Output '--- 9) set the created time including the doc-internal date ---'
+$wantBoth = Get-Date '2014-05-06 07:08:09'
+$script:gui.ChkCreatedMeta.Checked = $true
+$script:gui.DtpCreated.Value = $wantBoth
+$script:msgLog.Clear()
+Invoke-Click -Control $script:gui.BtnRun
+$fsBoth = (Get-Item -LiteralPath $target3 -Force).CreationTime
+Assert ($fsBoth.ToString('yyyy-MM-dd HH:mm:ss') -eq $wantBoth.ToString('yyyy-MM-dd HH:mm:ss')) 'filesystem creation time applied again'
+$metaBoth = (Get-DocxMeta -Path $target3).Created
+Assert ($metaBoth.ToString('yyyy-MM-dd HH:mm:ss') -eq $wantBoth.ToString('yyyy-MM-dd HH:mm:ss')) "doc-internal created date applied too (got $metaBoth)"
+Assert (Msg-Text -match '内容创建时间') "dialog mentions the doc-internal date (got: $(Msg-Text))"
+
+Write-Output ''
+Write-Output '--- 10) created time counts as a change on its own ---'
+$script:gui.ChkTime.Checked = $false
+$script:gui.ChkAuthor.Checked = $false
+$script:gui.ChkCreated.Checked = $false
+$script:msgLog.Clear()
+Invoke-Click -Control $script:gui.BtnRun
+Assert (Msg-Text -match '至少勾选一项') "refuses when nothing at all is ticked (got: $(Msg-Text))"
+
+Write-Output ''
+Write-Output '--- 11) the scratch folder must be the only place touched ---'
 # scratch is wiped at the start of every run, so THIS run must have created exactly
 # the two backups it expects, and nothing else anywhere.
-# scratch is wiped at the start of every run. Section 3 saved as a NEW file (no backup),
-# section 4 edited in place (with backup), so exactly one backup must exist.
+# scratch is wiped at the start of every run. Section 3 saved as a NEW file (no backup);
+# sections 4 and 8/9 edited in place, so two backups must exist.
 $strays = @(Get-ChildItem -LiteralPath $tmp -Filter '*.backup.docx' -File | Sort-Object Name)
-Assert ($strays.Count -eq 1) "exactly 1 backup in scratch (got $($strays.Count))"
-Assert ($strays[0].Name -eq 'target2.backup.docx') "the backup is the in-place target's (got $($strays[0].Name))"
+Assert ($strays.Count -eq 2) "exactly 2 backups in scratch (got $($strays.Count))"
+Assert (($strays | ForEach-Object { $_.Name }) -join ',' -eq 'target2.backup.docx,target3.backup.docx') "the backups are the in-place targets' (got $(($strays | ForEach-Object { $_.Name }) -join ','))"
 Write-Output ''
 Write-Output "=== FAILURES: $script:failed ==="
 
